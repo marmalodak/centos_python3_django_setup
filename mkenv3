@@ -1,0 +1,144 @@
+#!/bin/bash
+
+set +x
+set -e
+set -u
+export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+
+# http://www.1stbyte.com/2005/06/26/configure-and-compile-python-with-zlib/
+# ensure zlib-devel is installed
+
+PYTHON_DOWNLOAD_PATH="https://www.python.org/ftp/python/3.4.1/"
+PYTHON_FULL_NAME="Python-3.4.1.tgz"
+PYTHON_BASE_NAME="Python-3.4.1"
+DJANGO_FULL_NAME="Django-1.5.tar.gz"
+DJANGO_BASE_NAME="Django-1.5"
+ARAVENV="/e2e/ara"
+PYTHONHOME="/e2e/python34"
+
+mkdir -p cache
+mkdir -p build/python
+mkdir -p build/mod_wsgi
+
+#fetch virtualenv
+(
+    cd cache
+    if [[ ! -r virtualenv.py ]]; then
+        wget https://raw.github.com/pypa/virtualenv/master/virtualenv.py
+    fi
+    if [[ ! -r virtualenv.py ]]; then
+        echo "Could not find virtualenv.py in $(pwd)"
+        exit 1
+    fi
+    #chmod u+x virtualenv.py
+)
+
+#fetch pip
+(
+    cd cache
+    if [[ ! -r get-pip.py ]]; then
+        wget https://bootstrap.pypa.io/get-pip.py
+    fi
+    if [[ ! -r get-pip.py ]]; then
+        echo "Could not find get-pip.py in $(pwd)"
+        exit 1
+    fi
+)
+
+# fetch python3
+(
+    echo "PYTHONHOME=$PYTHONHOME"
+    cd cache
+    if [[ ! -r "$PYTHON_FULL_NAME" ]]; then 
+        wget "$PYTHON_DOWNLOAD_PATH/$PYTHON_FULL_NAME"
+    fi
+    if [[ ! -r "$PYTHON_FULL_NAME" ]]; then 
+        echo "Could not find $PYTHON_FULL_NAME in $(pwd)"
+        exit 1
+    fi
+    cp "$PYTHON_FULL_NAME" ../build/python
+)
+
+# fetch mod_wsgi
+(
+   cd cache
+   if [[ ! -r mod_wsgi-3.4.tar.gz ]]; then
+      wget http://modwsgi.googlecode.com/files/mod_wsgi-3.4.tar.gz
+   fi
+   if [[ ! -r mod_wsgi-3.4.tar.gz ]]; then
+      echo "Could not find mod_wsgi-3.4.tar.gz in $(pwd)"
+      exit 1
+   fi
+)
+
+# build python3
+(
+    echo "PYTHONHOME=$PYTHONHOME"
+    if [[ ! -r "$PYTHONHOME/bin/python3" ]]; then
+        cd build/python
+        tar xvzf "$PYTHON_FULL_NAME"
+        cd "$PYTHON_BASE_NAME"
+        ./configure --prefix="$PYTHONHOME" --with-zlib --with-openssl --enable-shared
+        if [[ $? -ne 0 ]]; then
+            echo "configure failed"
+            exit 1
+        fi
+        make -j 20
+        if [[ $? -ne 0 ]]; then
+            echo "make failed"
+            exit 1
+        fi
+        make install
+        if [[ $? -ne 0 ]]; then
+            echo "install of python failed"
+            exit 1
+        fi
+    else
+       echo "Python already built, skipping"
+    fi
+)
+
+# build mod_wsgi
+(
+    if [[ ! -r build/mod_wsgi/mod_wsgi-3.4/mod_wsgi.lo ]]; then
+       cd build/mod_wsgi
+       tar xvzf ../../cache/mod_wsgi-3.4.tar.gz
+       cd mod_wsgi-3.4
+       ./configure --prefix=/e2e/mod_wsgi --with-python=/e2e/python34/bin/python3.4 LDFLAGS="-Wl,-rpath -Wl,/e2e/python34/lib"
+       sed -i "s/-lpython3.4/-lpython3.4m/" Makefile  # https://groups.google.com/forum/#!topic/modwsgi/zk28E_XS68w
+       sed -i "s|DESTDIR =|DESTDIR = /e2e/mod_wsgi|" Makefile
+       make -j20
+       make install
+       libtool --finish /e2e/mod_wsgi/usr/lib64/httpd/modules
+    else
+       echo "mod_wsgi already built, skipping"
+    fi
+)
+
+if [[ ! -r "$ARAVENV/bin/activate" ]] ; then 
+    "$PYTHONHOME/bin/python3.4" "$PYTHONHOME/bin/pyvenv" "$ARAVENV"
+else
+    echo "$ARAVENV already there, skipping..."
+fi
+set +u  # I think this is a bug with activate
+source "$ARAVENV/bin/activate"
+set -u
+
+echo
+#echo "PYTHONHOME=$PYTHONHOME"  # activate will unset $PYTHONHOME
+echo "which python:"
+which python
+echo "python -V"
+python -V
+echo
+
+echo "put this line into /etc/ld.so.conf.d/e2e-python3.conf: /e2e/python34/lib"
+echo "put this line in your /etc/httpd/conf.d/auto_runs_wsgi.conf: LoadModule wsgi_module /e2e/mod_wsgi/usr/lib64/httpd/modules/mod_wsgi.so and that the old one is disabled; maybe yum remove mod_wsgi?"
+
+/e2e/python34/bin/python3.4 cache/get-pip.py
+
+#pip install django==1.6.5
+# use the fill path for pip else it installs in the global python installation instead of our venv
+/e2e/ara/bin/pip install django
+/e2e/ara/bin/pip install psycopg2
+/e2e/ara/bin/pip install ipython
