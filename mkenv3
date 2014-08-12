@@ -5,22 +5,58 @@ set -e
 set -u
 export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 
-# http://www.1stbyte.com/2005/06/26/configure-and-compile-python-with-zlib/
-# ensure zlib-devel is installed
+(
+    user=$(id -u)
+    if [[ $user -eq 0 ]]; then 
+        echo "Do you want to run this as root?"
+    fi 
+)
+
+(
+    set +e
+    rpm -q mod_wsgi
+    status=$?
+    set -e
+    if [[ $status -eq 0 ]]; then
+        echo "uninstall mod_wsgi"
+        exit 1
+    else
+        echo "which is since we do not want the default mod_wsgi"
+    fi
+)
+
+(
+    error=0
+    # http://www.1stbyte.com/2005/06/26/configure-and-compile-python-with-zlib/
+    rpms='wget openssl openssl-devel postgresql postgresql-devel postgresql-libs gcc httpd httpd-devel httpd-tools httpd-manual zlib-devel readline readline-devel bzip2-devel'
+    for i in $rpms; do 
+        set +e
+        rpm -q $i
+        status=$?
+        set -e
+        if [[ $status -ne 0 ]]; then
+            error=1
+        fi
+    done
+    if [[ $error -ne 0 ]]; then
+        echo "Also do \"yum groupinstall \"development tools\"\""
+        exit 1
+    fi
+)
 
 PYTHON_DOWNLOAD_PATH="https://www.python.org/ftp/python/3.4.1/"
 PYTHON_FULL_NAME="Python-3.4.1.tgz"
 PYTHON_BASE_NAME="Python-3.4.1"
-DJANGO_FULL_NAME="Django-1.5.tar.gz"
-DJANGO_BASE_NAME="Django-1.5"
-ARAVENV="/e2e/ara"
-PYTHONHOME="/e2e/python34"
+ROOT=/e2e
+HGQA="$ROOT/hgqa"
+PYTHONHOME="$ROOT/python34"
 
 mkdir -p cache
 mkdir -p build/python
 mkdir -p build/mod_wsgi
 
 #fetch virtualenv
+if [[ 0 -eq 1 ]]; then
 (
     cd cache
     if [[ ! -r virtualenv.py ]]; then
@@ -32,8 +68,10 @@ mkdir -p build/mod_wsgi
     fi
     #chmod u+x virtualenv.py
 )
+fi
 
-#fetch pip
+#fetch pip# no longer needed in python3.4
+if [[ 0 -eq 1 ]]; then
 (
     cd cache
     if [[ ! -r get-pip.py ]]; then
@@ -44,6 +82,7 @@ mkdir -p build/mod_wsgi
         exit 1
     fi
 )
+fi
 
 # fetch python3
 (
@@ -83,7 +122,7 @@ mkdir -p build/mod_wsgi
             echo "configure failed"
             exit 1
         fi
-        make -j 20
+        make
         if [[ $? -ne 0 ]]; then
             echo "make failed"
             exit 1
@@ -100,28 +139,30 @@ mkdir -p build/mod_wsgi
 
 # build mod_wsgi
 (
+    echo "/$ROOT/python34/lib > /etc/ld.so.conf.d/$ROOT-python3.conf"
+    ldconfig -v
     if [[ ! -r build/mod_wsgi/mod_wsgi-3.4/mod_wsgi.lo ]]; then
        cd build/mod_wsgi
        tar xvzf ../../cache/mod_wsgi-3.4.tar.gz
        cd mod_wsgi-3.4
-       ./configure --prefix=/e2e/mod_wsgi --with-python=/e2e/python34/bin/python3.4 LDFLAGS="-Wl,-rpath -Wl,/e2e/python34/lib"
+       ./configure --prefix=$ROOT/mod_wsgi --with-python=$ROOT/python34/bin/python3.4 LDFLAGS="-Wl,-rpath -Wl,$ROOT/python34/lib"
        sed -i "s/-lpython3.4/-lpython3.4m/" Makefile  # https://groups.google.com/forum/#!topic/modwsgi/zk28E_XS68w
-       sed -i "s|DESTDIR =|DESTDIR = /e2e/mod_wsgi|" Makefile
-       make -j20
+       sed -i "s|DESTDIR =|DESTDIR = $ROOT/mod_wsgi|" Makefile
+       make
        make install
-       libtool --finish /e2e/mod_wsgi/usr/lib64/httpd/modules
+       libtool --finish $ROOT/mod_wsgi/usr/lib64/httpd/modules
     else
        echo "mod_wsgi already built, skipping"
     fi
 )
 
-if [[ ! -r "$ARAVENV/bin/activate" ]] ; then 
-    "$PYTHONHOME/bin/python3.4" "$PYTHONHOME/bin/pyvenv" "$ARAVENV"
+if [[ ! -r "$HGQA/bin/activate" ]] ; then 
+    "$PYTHONHOME/bin/python3.4" "$PYTHONHOME/bin/pyvenv" "$HGQA"
 else
-    echo "$ARAVENV already there, skipping..."
+    echo "$HGQA already there, skipping..."
 fi
 set +u  # I think this is a bug with activate
-source "$ARAVENV/bin/activate"
+source "$HGQA/bin/activate"
 set -u
 
 echo
@@ -132,13 +173,28 @@ echo "python -V"
 python -V
 echo
 
-echo "put this line into /etc/ld.so.conf.d/e2e-python3.conf: /e2e/python34/lib"
-echo "put this line in your /etc/httpd/conf.d/auto_runs_wsgi.conf: LoadModule wsgi_module /e2e/mod_wsgi/usr/lib64/httpd/modules/mod_wsgi.so and that the old one is disabled; maybe yum remove mod_wsgi?"
+echo  "LoadModule wsgi_module $ROOT/mod_wsgi/usr/lib64/httpd/modules/mod_wsgi.so" > /etc/httpd/conf.d/e2e-hgqa-wsgi.conf
+cat << EOF > /etc/httpd/conf.d/e2e-hgqa.conf
+<Directory "/var/www/html/qahg/">
+    AllowOverride All
+    Order allow,deny
+    Allow from all
+</Directory>
 
-/e2e/python34/bin/python3.4 cache/get-pip.py
+WSGIScriptAlias /qahg $ROOT/qahg-site/qahg/qahg/wsgi.py
+WSGIPythonPath $ROOT/qahg-site/qahg:/e2e/qahg/lib/python3.4/site-packages
 
-#pip install django==1.6.5
+#WSGIApplicationGroup %{GLOBAL}
+
+<Directory $ROOT/qahg-site/qahg/qahg>
+<Files wsgi.py>
+#Require all granted
+</Files>
+</Directory>
+EOF
+
 # use the fill path for pip else it installs in the global python installation instead of our venv
-/e2e/ara/bin/pip install django
-/e2e/ara/bin/pip install psycopg2
-/e2e/ara/bin/pip install ipython
+$ROOT/python34/bin/pip3.4 install https://www.djangoproject.com/download/1.7c2/tarball/
+#$ROOT/python34/bin/pip3.4 install django
+$ROOT/python34/bin/pip3.4 install psycopg2
+$ROOT/python34/bin/pip3.4 install ipython
