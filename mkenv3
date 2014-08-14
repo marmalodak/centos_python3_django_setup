@@ -47,42 +47,15 @@ export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 PYTHON_DOWNLOAD_PATH="https://www.python.org/ftp/python/3.4.1/"
 PYTHON_FULL_NAME="Python-3.4.1.tgz"
 PYTHON_BASE_NAME="Python-3.4.1"
-ROOT=/e2e
-HGQA="$ROOT/hgqa"
+ROOT=/MyRoot
+MyProject="MyProject"
+MyProjectPath="$ROOT/$MyProject"
 PYTHONHOME="$ROOT/python34"
 
 mkdir -p cache
 mkdir -p build/python
 mkdir -p build/mod_wsgi
 
-#fetch virtualenv
-if [[ 0 -eq 1 ]]; then
-(
-    cd cache
-    if [[ ! -r virtualenv.py ]]; then
-        wget https://raw.github.com/pypa/virtualenv/master/virtualenv.py
-    fi
-    if [[ ! -r virtualenv.py ]]; then
-        echo "Could not find virtualenv.py in $(pwd)"
-        exit 1
-    fi
-    #chmod u+x virtualenv.py
-)
-fi
-
-#fetch pip# no longer needed in python3.4
-if [[ 0 -eq 1 ]]; then
-(
-    cd cache
-    if [[ ! -r get-pip.py ]]; then
-        wget https://bootstrap.pypa.io/get-pip.py
-    fi
-    if [[ ! -r get-pip.py ]]; then
-        echo "Could not find get-pip.py in $(pwd)"
-        exit 1
-    fi
-)
-fi
 
 # fetch python3
 (
@@ -156,13 +129,13 @@ fi
     fi
 )
 
-if [[ ! -r "$HGQA/bin/activate" ]] ; then 
-    "$PYTHONHOME/bin/python3.4" "$PYTHONHOME/bin/pyvenv" "$HGQA"
+if [[ ! -r "$MyProjectPath/bin/activate" ]] ; then 
+    "$PYTHONHOME/bin/python3.4" "$PYTHONHOME/bin/pyvenv" "$MyProjectPath"
 else
-    echo "$HGQA already there, skipping..."
+    echo "$MyProjectPath  already there, skipping..."
 fi
 set +u  # I think this is a bug with activate
-source "$HGQA/bin/activate"
+source "$MyProjectPath/bin/activate"
 set -u
 
 echo
@@ -173,20 +146,20 @@ echo "python -V"
 python -V
 echo
 
-echo  "LoadModule wsgi_module $ROOT/mod_wsgi/usr/lib64/httpd/modules/mod_wsgi.so" > /etc/httpd/conf.d/e2e-hgqa-wsgi.conf
-cat << EOF > /etc/httpd/conf.d/e2e-hgqa.conf
-<Directory "/var/www/html/qahg/">
+echo  "LoadModule wsgi_module $ROOT/mod_wsgi/usr/lib64/httpd/modules/mod_wsgi.so" > /etc/httpd/conf.d/$MyProject-wsgi.conf
+cat << EOF > /etc/httpd/conf.d/$MyProject.conf
+<Directory "/var/www/html/$MyProject/">
     AllowOverride All
     Order allow,deny
     Allow from all
 </Directory>
 
-WSGIScriptAlias /qahg $ROOT/qahg-site/qahg/qahg/wsgi.py
-WSGIPythonPath $ROOT/qahg-site/qahg:/e2e/qahg/lib/python3.4/site-packages
+WSGIScriptAlias /$MyProject $ROOT/$MyProject-site/$MyProject/$MyProject/wsgi.py
+WSGIPythonPath $ROOT/$MyProject-site/$MyProject:$MyProjectPath/lib/python3.4/site-packages
 
 #WSGIApplicationGroup %{GLOBAL}
 
-<Directory $ROOT/qahg-site/qahg/qahg>
+<Directory $ROOT/$MyProject-site/$MyProject/$MyProject>
 <Files wsgi.py>
 #Require all granted
 </Files>
