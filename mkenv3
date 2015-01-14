@@ -44,9 +44,9 @@ export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
     fi
 )
 
-PYTHON_DOWNLOAD_PATH="https://www.python.org/ftp/python/3.4.1/"
-PYTHON_FULL_NAME="Python-3.4.1.tgz"
-PYTHON_BASE_NAME="Python-3.4.1"
+PYTHON_DOWNLOAD_PATH="https://www.python.org/ftp/python/3.4.2/"
+PYTHON_FULL_NAME="Python-3.4.2.tgz"
+PYTHON_BASE_NAME="Python-3.4.2"
 ROOT=/MyRoot
 MyProject="MyProject"
 MyProjectPath="$ROOT/$MyProject"
@@ -167,7 +167,7 @@ WSGIPythonPath $ROOT/$MyProject-site/$MyProject:$MyProjectPath/lib/python3.4/sit
 EOF
 
 # use the fill path for pip else it installs in the global python installation instead of our venv
-$ROOT/python34/bin/pip3.4 install https://www.djangoproject.com/download/1.7c2/tarball/
+$ROOT/python34/bin/pip3.4 install https://www.djangoproject.com/download/1.7.3/tarball/
 #$ROOT/python34/bin/pip3.4 install django
 $ROOT/python34/bin/pip3.4 install psycopg2
 $ROOT/python34/bin/pip3.4 install ipython
